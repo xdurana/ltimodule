@@ -1,0 +1,5 @@
+name = ltimodule
+description = LTI Module
+package = lti
+core = 7.x
+files[] = ltimodule.module

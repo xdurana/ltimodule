@@ -1,0 +1,582 @@
+<?php
+
+/**
+ * @file ltimodule.module
+ * LTI Provider module
+ */
+
+
+/**
+ * hook_init
+ */
+function ltimodule_init() {
+	drupal_add_js(drupal_get_path('module', 'ltimodule') . '/js/ltimodule.js');
+}
+
+/**
+ * hook_menu
+ */
+function ltimodule_menu() {
+
+	$items['ltimodule'] = array(
+			'title' => 'LTI Module',
+			'page callback' => 'ltimodule',
+			'access arguments' => array('TODO: Enter user permissions'),
+	);
+
+	$items['ltimodule/user'] = array(
+			'title' => 'LTI Module user',
+			'page callback' => 'ltimodule_user',
+			'access callback' => array(TRUE),
+	);
+
+	$items['admin/people/ltimodule'] = array(
+			'title' => 'LTI',
+			'page callback' => 'ltimodule_admin',
+			'access arguments' => array('TODO: Enter user permissions'),
+			'type' => MENU_LOCAL_TASK,
+	);
+
+	$items['admin/people/ltimodule/keys'] = array(
+			'title' => 'LTI keys',
+			'page callback' => 'ltimodule_admin',
+			'access arguments' => array('TODO: Enter user permissions'),
+			'type' => MENU_DEFAULT_LOCAL_TASK,
+			'weight' => 0,
+	);
+
+	$items['admin/people/ltimodule/add'] = array(
+			'title' => 'Add new consumer',
+			'page callback' => 'drupal_get_form',
+			'page arguments' => array('ltimodule_admin_add'),
+			'access arguments' => array('TODO: Enter user permissions'),
+			'type' => MENU_CALLBACK,
+			'weight' => 2,
+	);
+
+	$items['admin/people/ltimodule/users'] = array(
+			'title' => 'LTI Users',
+			'page callback' => 'ltimodule_admin_users',
+			'access arguments' => array('TODO: Enter user permissions'),
+			'type' => MENU_LOCAL_TASK,
+			'weight' => 4,
+	);
+
+	$items['admin/people/ltimodule/users/add'] = array(
+			'title' => 'Add LTI Users connection',
+			'page callback' => 'drupal_get_form',
+			'page arguments' => array('ltimodule_admin_users_add'),
+			'access arguments' => array('TODO: Enter user permissions'),
+			'type' => MENU_CALLBACK,
+			'weight' => 4,
+	);
+
+
+	$items['admin/people/ltimodule/users/delete_user/%'] = array(
+			'title' => 'Delete User',
+			'page callback' => 'drupal_get_form',
+			'page arguments' => array('ltimodule_user_delete_confirmation', 5),
+			'access arguments' => array('TODO: Enter user permissions'),
+			'type' => MENU_CALLBACK,
+	);
+
+	$items['admin/people/ltimodule/users/delete_connection/%'] = array(
+			'title' => 'Delete Connection with user',
+			'page callback' => 'drupal_get_form',
+			'page arguments' => array('ltimodule_user_connection_delete_confirmation', 5),
+			'access arguments' => array('TODO: Enter user permissions'),
+			'type' => MENU_CALLBACK,
+	);
+
+	return $items;
+}
+
+/**
+ * ltimodule_admin_users_add
+ */
+function ltimodule_admin_users_add() {
+	
+	$form = array();
+
+	$form['id_campus'] = array(
+			'#type' => 'textfield',
+			'#title' => t('ID Campus'),
+	);
+
+	$form['user_drupal'] = array(
+			'#type' => 'textfield',
+			'#title' => t('Drupal user'),
+			'#autocomplete_path' => 'user/autocomplete',
+	);
+
+	$form['submit'] = array(
+			'#type' => 'submit',
+			'#value' => t('Send'),
+	);
+
+	return $form;
+}
+
+/**
+ * ltimodule_user_connection_delete_confirmation
+ * @param unknown_type $form
+ * @param unknown_type $form_state
+ * @param unknown_type $uid
+ */
+function ltimodule_user_connection_delete_confirmation($form, &$form_state, $uid = null) {
+	$form = array();
+	$form['uid'] = array(
+			'#type' => 'hidden',
+			'#value' => $uid,
+	);
+
+	if (is_numeric($uid)) {
+		$account = user_load($uid);
+	}
+
+	return confirm_form($form, t('Do you want to delete this user connection?'), 'admin/people/ltimodule/users', t("You're about to delete <b>LTI connection</b> for user <b>@user</b> . This won't delete you user, just the connection with LTI. Are you OK with that?", array('@user' => $account->name)), t('OK'), t('Cancel'), 'lti_user_delete_confirm');
+}
+
+/**
+ * ltimodule_user_connection_delete_confirmation_submit
+ * @param unknown_type $form
+ * @param unknown_type $form_state
+ */
+function ltimodule_user_connection_delete_confirmation_submit($form, &$form_state) {
+	$values = $form_state['values'];
+	$uid = $values['uid'];
+	$account = user_load($uid);
+	$name = $account->name;
+
+	db_delete('blti_users')
+	->condition('uid', $uid)
+	->execute();
+
+	drupal_set_message(t('LTI connection for user @name has been deleted', array('@name' => $name)));
+	drupal_goto('admin/people/ltimodule/users');
+}
+
+/**
+ * ltimodule_user_delete_confirmation
+ * @param unknown_type $form
+ * @param unknown_type $form_state
+ * @param unknown_type $uid
+ */
+function ltimodule_user_delete_confirmation($form, &$form_state, $uid = null) {
+	$form = array();
+	$form['uid'] = array(
+			'#type' => 'hidden',
+			'#value' => $uid,
+	);
+
+	if (is_numeric($uid)) {
+		$account = user_load($uid);
+	}
+
+	return confirm_form($form, t('Do you want to delete this user?'), 'admin/people/ltimodule/users', t("You're about to delete user <b>@user</b>. This can't be undone", array('@user' => $account->name)), t('OK'), t('Cancel'), 'lti_user_delete_confirm');
+}
+
+/**
+ * ltimodule_user_delete_confirmation_submit
+ * @param unknown_type $form
+ * @param unknown_type $form_state
+ */
+function ltimodule_user_delete_confirmation_submit($form, &$form_state) {
+	$values = $form_state['values'];
+	$uid = $values['uid'];
+	$account = user_load($uid);
+	$name = $account->name;
+
+	user_delete($uid);
+	drupal_set_message(t('User @name has been deleted', array('@name' => $name)));
+	drupal_goto('admin/people/ltimodule/users');
+}
+
+/**
+ * ltimodule_admin_users
+ */
+function ltimodule_admin_users() {
+
+	$result = db_select('blti_users')
+	->fields('blti_users')
+	->execute();
+
+	$rows = array();
+	foreach ($result as $key => $value) {
+		$account = user_load($value->uid);
+
+		//si l'usuari no es carrega correctament és que no existeix. Esborrem la connexió
+		if (!$account) {
+			db_delete('blti_users')
+			->condition('id', $value->id)
+			->execute();
+		}
+		else {
+			//imprimim la fila corresponent
+			$rows[] = array(
+					'id' => $value->id,
+					'uid' => theme("username", array('account' => $account)),
+					'delete_user' => l(t('Delete user'), 'admin/people/ltimodule/users/delete_user/' . $value->uid),
+					'delete_user_connection' => l(t('Delete user connection'), 'admin/people/ltimodule/users/delete_connection/' . $value->uid),
+			);
+		}
+
+
+	}
+
+	$header = array('id campus', 'user biblioteca', 'Delete user', 'Delete user connection');
+
+	return theme('table', array('rows' => $rows, 'header' => $header));
+
+	return 'users';
+}
+
+/**
+ * ltimodule_get_blti_user
+ * @param unknown_type $username
+ */
+function ltimodule_get_blti_user($username) {
+
+	$uid = FALSE;
+	$result = db_select('blti_users')
+	->fields('blti_users')
+	->condition('id', check_plain($username))
+	->execute();
+
+	$num_rows = $result->rowCount();
+
+	if ($num_rows > 0) {
+		dsm('hay user!');
+		foreach ($result as $row) {
+			$uid = $row->uid;
+		}
+	}
+	return $uid;
+}
+
+/**
+ * ltimodule_user
+ * LTI consumer call handler
+ */
+function ltimodule_user() {
+	// Load up the Basic LTI Support code
+	module_load_include('inc', 'ltimodule', 'blti');
+	$error = FALSE;
+
+
+	// Establish the context
+	$context = new BLTI(array('table' => 'blti_keys'), true, false);
+
+
+	if (!$context->valid) {
+		dsm( "Could not establish context: ".$context->message."<p>\n");
+		$error = TRUE;
+	}
+
+	if (!$error) {
+		dsm($context);
+		dsm($_REQUEST);
+		dsm($_SERVER);
+
+		if (isset($context->info['custom_lti_message_encoded_base64']) && $context->info['custom_lti_message_encoded_base64']==1) {
+			$context->info = decodeBase64($context->info);
+		}
+
+		dsm($context);
+
+		$username = $context->info['custom_username'];
+		$uid = ltimodule_get_blti_user($username);
+
+		if (!$uid) {
+
+			dsm('NO hay user!');
+
+			$account = user_load_by_name(array('name' => check_plain($username)));
+			if (!$account) {
+				$account = ltimodule_create_account($username);
+			}
+			dsm($account);
+
+
+			dsm($context->getUserKey());
+			dsm($account->uid);
+
+			$return_value = db_insert('blti_users')->fields(
+					array(
+							'id' => $username,
+							'uid' => $account->uid,
+					)
+			)->execute();
+			$uid = $account->uid;
+		}
+
+		$appid = $context->info['custom_roleappid'];
+		$type = $context->info['custom_roletypeid'];
+		$subtype = $context->info['custom_rolesubtypeid'];
+
+		ltimodule_set_user_role($uid, $appid, $type, $subtype);
+		ltimodule_update_account($uid, $context);
+
+		$form_state['uid'] = $uid;
+		ltimodule_user_login_submit(array(), $form_state);
+
+		drupal_goto('<front>');
+	}
+
+	return 'users';
+
+}
+
+/**
+ * ltimodule_update_account
+ * @param unknown_type $uid
+ * @param unknown_type $context
+ */
+function ltimodule_update_account($uid, $context) {
+	$user = user_load($uid);
+	$obj = entity_metadata_wrapper('user', $user);
+	$obj->field_user_data = json_encode($context->info);
+	$obj->save();
+}
+
+/**
+ * ltimodule_set_user_role
+ * @param uid
+ * @param role
+ */
+function ltimodule_set_user_role($uid, $appid, $type, $subtype) {
+	$rid = 100;
+	$sql = sprintf("SELECT rid FROM role_uoc WHERE appid = '%s' AND tipus = '%s' AND subtipus = '%s';", $appid, $type, $subtype);
+
+	dsm($sql);
+
+	$result = db_query($sql);
+	foreach($result as $row) {
+		$rid = $row->rid;
+	}
+
+	db_delete('users_roles')
+	->condition('uid', $uid)
+	->condition('rid', 100, '>=')
+	->execute();
+
+	db_insert('users_roles')->fields(
+			array(
+					'uid' => $uid,
+					'rid' => $rid,
+			)
+	)->execute();
+}
+
+/**
+ * ltimodule_user_login_submit
+ * @param unknown_type $form
+ * @param unknown_type $form_state
+ */
+function ltimodule_user_login_submit($form, &$form_state) {
+	global $user;
+	$user = user_load($form_state['uid']);
+	user_login_finalize($form_state);
+}
+
+/**
+ * ltimodule_create_account
+ * @param unknown_type $username
+ * @return unknown
+ */
+function ltimodule_create_account($username = null) {
+
+	dsm('username: ' . $username);
+
+	$authname = isset($username)? $username : user_password(20);
+
+	dsm('authname: ' . $authname);
+	dsm('password: ' . user_password());
+
+
+	if (variable_get('user_register', 1)) {
+		dsm('user register');
+
+
+		$userinfo = array(
+				'name' => $authname,
+				'pass' => user_password(),
+				'mail' => sprintf('%s@uoc.edu', $authname),
+				'signature_format' => 'full_html',
+				'language' => 'ca',
+				'timezone' => 'Europe/Berlin',
+				'init' => $authname,
+				'status' => 1,
+				'access' => REQUEST_TIME
+		);
+
+		dsm($userinfo);
+
+		$new_account = user_save('', $userinfo);
+
+		dsm('User saved');
+
+		// Terminate if an error occured during user_save().
+		if (!$new_account) {
+			dsm('Error saving user account');
+			drupal_set_message(t("Error saving user account."), 'error');
+		} else {
+			dsm($new_account);
+			watchdog('user', 'New external user: %name using module %module.', array('%name' => $authname, '%module' => 'connector'), WATCHDOG_NOTICE, l(t('edit'), 'user/' . $new_account->uid . '/edit'));
+			return $new_account;
+		}
+	}
+	else {
+		dsm('not user register');
+		drupal_set_message(t('Only site administrators can create new user accounts.'), 'error');
+		if (isset($connector['logout callback']) && is_callable($connector['logout callback'])) {
+			call_user_func($connector['logout callback'], $connector, $connection->cid);
+		}
+	}
+}
+
+function ltimodule() {
+	return 'bon dia!';
+}
+
+/**
+ * ltimodule_admin
+ */
+function ltimodule_admin(){
+	$output = '';
+
+	// Normal main/list view that shows all the existing tools
+	$sql = "SELECT * FROM  blti_keys;";
+	$result = db_query($sql);
+	$num_rows = $result->rowCount();
+
+	if( $num_rows == 0 ) {
+		$output .= "<p>This system has no defined oauth_consumer_key values.</p>";
+	} else {
+
+		$rows = array();
+		$header = array(
+				t('Id'),
+				t('Name'),
+				t('Oauth Consumer Key'),
+				t('Secret'),
+		);
+
+		foreach($result as $row) {
+			$rows[] = array(
+					'id' => $row->id,
+					'name' => $row->name,
+					'oauth_consumer_key' => $row->oauth_consumer_key,
+					'secret' => $row->secret,
+			);
+		}
+
+		$output .=
+		theme('table',
+				array(
+						'rows' => $rows,
+						'header' => $header
+				)
+		);
+	}
+
+
+
+	$output .= l('Add a Consumer', 'admin/people/ltimodule/add');
+
+	return $output;
+}
+
+/**
+ * ltimodule_admin_add
+ */
+function ltimodule_admin_add(){
+
+	$form = array();
+
+	$form['display_name'] = array(
+			'#type' => 'textfield',
+			'#title' => t('Display name'),
+	);
+
+	$form['oauth_consumer_key'] = array(
+			'#type' => 'textfield',
+			'#title' => t('Oauth consumer key'),
+			'#default_value' => user_password(40),
+	);
+
+	$form['oauth_secret'] = array(
+			'#type' => 'textfield',
+			'#title' => t('Oauth secret'),
+			'#default_value' => user_password(40),
+	);
+
+	$form['context_id'] = array(
+			'#type' => 'textfield',
+			'#title' => t('Context id'),
+			'#description' => t('Leave context_id blank unless you want to override the
+					context_id from the Consumer for this key.'),
+	);
+
+	$form['submit'] = array(
+			'#type' => 'submit',
+			'#value' => t('Send'),
+	);
+
+	return $form;
+}
+
+/**
+ * ltimodule_admin_add_submit
+ * @param unknown_type $form
+ * @param unknown_type $form_state
+ */
+function ltimodule_admin_add_submit($form, &$form_state){
+	
+	$values = $form_state['values'];
+
+	$oauth_consumer_key = check_plain($values['oauth_consumer_key']);
+	$secret = check_plain($values['oauth_secret']);
+	$name = check_plain($values['display_name']);
+	$context_id = check_plain($values['context_id']);
+
+	if (strlen($context_id) < 1){
+		$context_id = false;
+	}
+
+	if ($name && $secret && $oauth_consumer_key) {
+		try {
+			$return_value = db_insert('blti_keys')
+			->fields(
+					array(
+							'name' => $name,
+							'secret' => $secret,
+							'oauth_consumer_key' => $oauth_consumer_key,
+							'context_id' => $context_id,
+					)
+			)
+			->execute();
+		}
+		catch (Exception $e) {
+			drupal_set_message(t('db_insert failed. Message = %message, query= %query',
+					array('%message' => $e->getMessage(), '%query' => $e->query_string)), 'error');
+		}
+
+		dsm(get_defined_vars());
+	}
+}
+
+/**
+ * Data submitter are in base64 then we have to decode
+ * @author Antoni Bertran (abertranb@uoc.edu)
+ * @param $info array
+ */
+function decodeBase64($info) {
+	$keysNoEncode = array("lti_version", "lti_message_type", "tool_consumer_instance_description", "tool_consumer_instance_guid", "oauth_consumer_key", "custom_lti_message_encoded_base64", "oauth_nonce", "oauth_version", "oauth_callback", "oauth_timestamp", "basiclti_submit", "oauth_signature_method");
+	foreach ($info as $key => $item) {
+		if (!in_array($key, $keysNoEncode)) {
+			$info[$key] = base64_decode($item);
+		}
+	}
+	return $info;
+}
